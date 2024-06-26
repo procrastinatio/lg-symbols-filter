@@ -29,7 +29,7 @@ toolbox_path = os.path.abspath(__file__)
 toolbox_dir = os.path.dirname(toolbox_path)
 
 DEFAULT_SYMBOL_RULES_JSON = os.path.join(toolbox_dir, "layer_symbols_rules.json")
-DEFAULT_FILTERED_SYMBOL_FILE = os.path.join(toolbox_dir, "filtered_feature_count.xlsx")
+DEFAULT_FILTERED_SYMBOL_FILE = os.path.join(toolbox_dir, "output", "filtered_feature_count.xlsx")
 
 """logger = arcpy_logger.get_logger(
     log_level="INFO", logfile_pth=Path(r"H:/SymbolFilter.log"), propagate=False
