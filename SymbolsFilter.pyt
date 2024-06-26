@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 
+import os
 import re
 import geopandas as gpd
 import pandas as pd
@@ -8,7 +9,12 @@ import arcpy
 import logging
 from pathlib import Path
 
-from helpers import get_selected_features
+import helpers
+import arcpy_logger
+
+import importlib
+importlib.reload(helpers)  # force reload of the module
+importlib.reload(arcpy_logger)
 
 sys.dont_write_bytecode = True
 
@@ -16,16 +22,22 @@ DEBUG_MODE = False
 
 DEFAULT_WORKSPACE = r"h:/connections/GCOVERP@osa.sde"
 
-from arcpy_logger import get_logger, ArcpyHandler
 
-"""logger = get_logger(
+# Get the directory of the .pyt file
+toolbox_path = os.path.abspath(__file__)
+toolbox_dir = os.path.dirname(toolbox_path)
+
+DEFAULT_SYMBOL_RULES_JSON = os.path.join(toolbox_dir, "layer_symbols_rules.json")
+DEFAULT_FILTERED_SYMBOL_FILE = os.path.join(toolbox_dir, "filtered_feature_count.xlsx")
+
+"""logger = arcpy_logger.get_logger(
     log_level="INFO", logfile_pth=Path(r"H:/SymbolFilter.log"), propagate=False
 )"""
 
 log_str_lst = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "WARN", "FATAL"]
 log_int_lst = [0, 10, 20, 30, 40, 50]
 
-log_level = "INFO"
+log_level = "WARNING"
 
 # set logging level
 if isinstance(log_level, str):
@@ -38,7 +50,7 @@ while logger.hasHandlers():
 logger.propagate = False
 logger.setLevel(log_level)
 log_frmt = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-ah = ArcpyHandler()
+ah = arcpy_logger.ArcpyHandler()
 ah.setFormatter(log_frmt)
 logger.addHandler(ah)
 
@@ -61,7 +73,7 @@ def clean_headings(headings):
     return headings
 
 
-def filter_from_criteria(data, gdf):
+'''def filter_from_criteria(data, gdf):
     headings = data.get("headings")
 
     values = data.get("values")
@@ -85,7 +97,7 @@ def filter_from_criteria(data, gdf):
                 )
         filters.append(filter_expression)
 
-    return filters
+    return filters'''
 
 
 def get_last_element(s):
@@ -95,7 +107,7 @@ def get_last_element(s):
     return elements[-1]
 
 
-def process_layer(layername, gdf, data, all_value=True):
+'''def process_layer(layername, gdf, data, all_value=True):
     results = {}
     logger.info(f"-----{layername}--------")
 
@@ -130,8 +142,8 @@ def process_layer(layername, gdf, data, all_value=True):
 
     gdf = gdf.fillna(0.0).astype(int)
 
-    logger.info(gdf.columns)
-    logger.info(gdf.dtypes)
+
+
 
     filters = filter_from_criteria(data, gdf)
 
@@ -150,7 +162,7 @@ def process_layer(layername, gdf, data, all_value=True):
         if len(filtered_df) > 0:
             logger.info(f"    {label}: {len(filtered_df)}")
 
-    return {"rules": results}
+    return {"rules": results}'''
 
 
 class Toolbox:
@@ -199,12 +211,8 @@ class SymbolFilter:
         )
 
         param0.values = "Mapsheet"
-        param1.values = (
-            r"H:\code\lg-geology-data-model\exports\layer_symbols_rules.json"
-        )
-        param2.values = (
-            r"H:\code\lg-geology-data-model\exports\filtered_feature_count.xlsx"
-        )
+        param1.values = DEFAULT_SYMBOL_RULES_JSON
+        param2.values = DEFAULT_FILTERED_SYMBOL_FILE
 
         params = [param0, param1, param2]
         return params
@@ -245,34 +253,36 @@ class SymbolFilter:
 
         try:
             # Read the mask file (shapefile or GeoJSON)
-            spatial_filter = get_selected_features(inLayer)
+            spatial_filter = helpers.get_selected_features(inLayer)
             # Assuming the mask is a single geometry, you can dissolve to create a single unified geometry
             # mask_geom = mask_gdf.unary_union
-            messages.addMessage(f"{spatial_filter}, type={type(spatial_filter)}")
+
         except Exception as e:
             logger.error(e)
-        # messages.addMessage("{0} has no features.".format(spatial_filter))
+            messages.addErrorMessage("Layer {0} has no selected features.".format(inLayer))
+            raise arcpy.ExecuteError
 
-        with open(inSymbolsFile, "r") as f:
+        try:
+          with open(inSymbolsFile, "r") as f:
             layers = json.load(f)
+        except IOError as e:
+            messages.addErrorMessage(f"Cannot open {inSymbolsFile}")
+            raise arcpy.ExecuteError
 
-        # messages.addMessage("{0} has no features.".format(layers.keys()))
 
         for layername in layers.keys():
             messages.addMessage(f"--- {layername} ---")
             data = layers.get(layername)
-            # messages.addMessage(data)
 
             datasource = data.get("dataSource")
 
-            # messages.addMessage(f"datasource={datasource}")
 
             dataset = None
             m = re.findall(",Dataset=(.*)", datasource)
             if m and len(m) > 0:
                 dataset = m[0]  # .split(".").pop()
 
-            # TTEC_LIM_TYP
+
             try:
                 logger.debug(f"    dataset={dataset}")
                 renderer = data.get("renderer")
@@ -285,6 +295,16 @@ class SymbolFilter:
                 continue
 
             feature_class_path = dataset
+
+            # headers
+            columns = renderer.get("headings")
+            values = renderer.get("values")
+            labels = renderer.get("labels")
+
+            if columns is None or None in columns:
+                logger.warning(f"No headings found for {layername}: {columns}")
+            else:
+                columns = list(map(get_last_element, columns))
 
             # Get the selected features using a search cursor with spatial filter
             selected_features = []
@@ -299,17 +319,17 @@ class SymbolFilter:
                 logger.debug(f"     ====== MERGING")
                 logger.debug(gdf)
 
+                messages.addMessage(f"HARMOS: {gdf.columns}")
+
                 # results = process_layer(layername, gdf, renderer)
 
             logger.info(f"    count={len(gdf)}")
             logger.debug(f"    {renderer}")
             logger.debug(f"    {gdf.columns}")
 
-            if not "Bedrock_HARMOS" in layername:  # "Quelle" in layername:
+            if not "toto" in layername:  # "Quelle" in layername:
                 logger.info("############################################")
-                columns = renderer.get("headings")
-                values = renderer.get("values")
-                labels = renderer.get("labels")
+
 
                 if columns is None or any(col is None for col in columns):
                     logger.error(f"<null> column are not valid: {columns}")
@@ -329,7 +349,7 @@ class SymbolFilter:
                     continue
 
                 logger.debug(f"BEFORE: Orient dataFrame\n{gdf}")
-                logger.debug(f"Count\n{len(gdf)}")
+                messages.addMessage(f"Features total: {len(gdf)}")
 
                 # Initialize the complex filter criteria list
                 complex_filter_criteria = []
@@ -403,6 +423,7 @@ class SymbolFilter:
                     count = len(filtered_df)
 
                     if count > 0:
+                        messages.addMessage(f"{label}: {count}")
                         results[label] = count
 
                 # Print the results
@@ -424,7 +445,7 @@ class SymbolFilter:
             # logger.debug(f"     {json.dumps(results, indent=4)}")
 
         logger.info(f"---- Saving results to {output_path} ----------")
-        logger.info(f"---- {filtered.keys()} ----------")
+        logger.debug(f"---- {filtered.keys()} ----------")
 
         try:
             data = filtered  # results["layers"]
@@ -448,7 +469,7 @@ class SymbolFilter:
             if drop:
                 df = df[df.Count != 0]
 
-            with pd.ExcelWriter(output_path) as writer:
+            with pd.ExcelWriter(output_path ) as writer:
                 df.to_excel(writer, sheet_name="RULES")
 
         except Exception as e:
