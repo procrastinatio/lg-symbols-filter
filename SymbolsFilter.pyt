@@ -273,7 +273,7 @@ class SymbolFilter:
     def execute(self, parameters, messages):
         """The source code of the tool."""
 
-        from utils import arcgis_table_to_df  # Twice imported
+        from helpers import arcgis_table_to_df  # Twice imported
 
         inLayer = parameters[0].valueAsText
         inSymbolsFile = parameters[1].valueAsText

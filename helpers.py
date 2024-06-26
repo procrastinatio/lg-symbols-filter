@@ -1,8 +1,47 @@
 import arcpy
 import geopandas as gpd
 import pandas as pd
+from collections import OrderedDict
 from shapely.geometry import shape
 from arcgis.geometry import Geometry
+
+import logging
+
+
+def arcgis_table_to_df(in_fc, input_fields=None, query="", spatial_filter=None):
+    """Function will convert an arcgis table into a pandas dataframe with an object ID index, and the selected
+    input fields using an arcpy.da.SearchCursor.
+    :param - in_fc - input feature class or table to convert
+    :param - input_fields - fields to input to a da search cursor for retrieval
+    :param - query - sql query to grab appropriate values
+    :returns - pandas.DataFrame"""
+    OIDFieldName = arcpy.Describe(in_fc).OIDFieldName
+    available_fields = [field.name for field in arcpy.ListFields(in_fc)]
+    logging.debug(f"Available fields: {available_fields}")
+    logging.debug(f"Input fields: {input_fields}")
+    if input_fields:
+        # Preserve order of the 'input_fields'
+        final_fields = list(
+            OrderedDict.fromkeys(
+                item for item in input_fields if item in available_fields
+            )
+        )
+    else:
+        final_fields = available_fields
+    logging.debug(f"intersection: {final_fields}")
+    data = [
+        row
+        for row in arcpy.da.SearchCursor(
+            in_fc,
+            final_fields,
+            where_clause=query,
+            spatial_filter=spatial_filter,
+            search_order="SPATIALFIRST",
+        )
+    ]
+    fc_dataframe = pd.DataFrame(data, columns=final_fields)
+    fc_dataframe = fc_dataframe.set_index(OIDFieldName, drop=True)
+    return fc_dataframe
 
 
 def get_selected_features(layer, esri_geom=True):
