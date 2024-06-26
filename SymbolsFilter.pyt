@@ -13,6 +13,7 @@ import helpers
 import arcpy_logger
 
 import importlib
+
 importlib.reload(helpers)  # force reload of the module
 importlib.reload(arcpy_logger)
 
@@ -73,7 +74,7 @@ def clean_headings(headings):
     return headings
 
 
-'''def filter_from_criteria(data, gdf):
+"""def filter_from_criteria(data, gdf):
     headings = data.get("headings")
 
     values = data.get("values")
@@ -97,7 +98,7 @@ def clean_headings(headings):
                 )
         filters.append(filter_expression)
 
-    return filters'''
+    return filters"""
 
 
 def get_last_element(s):
@@ -107,7 +108,7 @@ def get_last_element(s):
     return elements[-1]
 
 
-'''def process_layer(layername, gdf, data, all_value=True):
+"""def process_layer(layername, gdf, data, all_value=True):
     results = {}
     logger.info(f"-----{layername}--------")
 
@@ -162,7 +163,108 @@ def get_last_element(s):
         if len(filtered_df) > 0:
             logger.info(f"    {label}: {len(filtered_df)}")
 
-    return {"rules": results}'''
+    return {"rules": results}"""
+
+
+def get_dataset(data):
+    dataset = None
+    datasource = data.get("dataSource")
+
+    m = re.findall(",Dataset=(.*)", datasource)
+    if m and len(m) > 0:
+        dataset = m[0]  # .split(".").pop()
+
+    return dataset
+
+
+def get_renderer(data):
+    renderer = None
+    try:
+        renderer = data.get("renderer")
+    except Exception as e:
+        logger.warning(f"    Cannot get renderer for {layername}: {e}")
+    return renderer
+
+
+def get_columns(renderer, layername):
+    columns = renderer.get("headings")
+
+    if columns is None or None in columns:
+        logger.warning(f"No headings found for {layername}: {columns}")
+    else:
+        columns = list(map(get_last_element, columns))
+    return columns
+
+
+def get_complex_filter_criteria(labels, values, columns):
+    # Initialize the complex filter criteria list
+    complex_filter_criteria = []
+
+    # Iterate over the list of value sets and labels
+    for label, value_set in zip(labels, values):
+        for value_group in value_set:
+            # Create a list of (column, value) pairs
+            criteria = [
+                (col, convert_to_int(val)) for col, val in zip(columns, value_group)
+            ]  # TODO: if val is not None]
+            # Add the criteria to the complex filter list along with the label
+            complex_filter_criteria.append((label, criteria))
+
+    # Print the complex filter criteria
+    logger.debug("Complex Filter Criteria with Labels:")
+    for label, criteria in complex_filter_criteria:
+        logger.debug(f"Label: {label}, Criteria: {criteria}")
+
+    return complex_filter_criteria
+
+
+def convert_columns(df, columns_to_convert):
+    # Check if conversion is possible and convert
+    try:
+        for col in columns_to_convert:
+            if (
+                df[col]
+                .dropna()
+                .apply(lambda x: isinstance(x, float) and x.is_integer())
+                .all()
+            ):
+                # Fill NaN values with 0 (or another specific value) before conversion
+                df[col] = df[col].fillna(0).astype(int)
+    except KeyError as ke:
+        logger.error(f"Key error while converting column {col}: {ke}")
+    except Exception as e:
+        logger.error(f"Unknown error: {e}")
+
+    return df
+
+
+def save_to_files(output_path, filtered, drop_null=True):
+    try:
+        data = filtered  # results["layers"]
+
+        with open(output_path.replace(".xlsx", ".json"), "w", encoding="utf-8") as f:
+            # Serialize the data and write it to the file
+            json.dump(filtered, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        messages.addErrorMessage(e)
+        logger.error(e)
+
+    try:
+        flattened_data = [
+            (k1, k2, v) for k1, subdict in data.items() for k2, v in subdict.items()
+        ]
+
+        # Convert to a DataFrame
+        df = pd.DataFrame(flattened_data, columns=["Layer", "Rule", "Count"])
+        if drop_null:
+            df = df[df.Count != 0]
+
+        with pd.ExcelWriter(output_path) as writer:
+            df.to_excel(writer, sheet_name="RULES")
+
+    except Exception as e:
+        logger.error(e)
+        raise arcpy.ExecuteError
 
 
 class Toolbox:
@@ -259,59 +361,50 @@ class SymbolFilter:
 
         except Exception as e:
             logger.error(e)
-            messages.addErrorMessage("Layer {0} has no selected features.".format(inLayer))
+            messages.addErrorMessage(
+                "Layer {0} has no selected features.".format(inLayer)
+            )
             raise arcpy.ExecuteError
 
         try:
-          with open(inSymbolsFile, "r") as f:
-            layers = json.load(f)
+            with open(inSymbolsFile, "r") as f:
+                layers = json.load(f)
         except IOError as e:
             messages.addErrorMessage(f"Cannot open {inSymbolsFile}")
             raise arcpy.ExecuteError
 
-
         for layername in layers.keys():
-            messages.addMessage(f"--- {layername} ---")
+            messages.addMessage(f"--- {layername} ---".encode("cp1252"))
             data = layers.get(layername)
 
-            datasource = data.get("dataSource")
+            dataset = get_dataset(data)
+            renderer = get_renderer(data)
 
-
-            dataset = None
-            m = re.findall(",Dataset=(.*)", datasource)
-            if m and len(m) > 0:
-                dataset = m[0]  # .split(".").pop()
-
-
-            try:
-                logger.debug(f"    dataset={dataset}")
-                renderer = data.get("renderer")
-            except Exception as e:
-                logger.warning(f"    Cannot get renderer for {layername}: {e}")
-                continue
-
-            if dataset is None:
+            if dataset is None or renderer is None:
                 logger.warning(f"    No dataset found for {layername}")
                 continue
 
             feature_class_path = dataset
 
             # headers
-            columns = renderer.get("headings")
+            columns = get_columns(renderer, layername)
             values = renderer.get("values")
             labels = renderer.get("labels")
 
-            if columns is None or None in columns:
+            if columns is None:
                 logger.warning(f"No headings found for {layername}: {columns}")
-            else:
-                columns = list(map(get_last_element, columns))
+                continue
 
             # Get the selected features using a search cursor with spatial filter
             selected_features = []
 
-            gdf = arcgis_table_to_df(feature_class_path, spatial_filter=spatial_filter)
+            gdf = None
+
             # TODO: this should be dynamic
             if "Bedrock_HARMOS" in layername:
+                gdf = arcgis_table_to_df(
+                    feature_class_path, spatial_filter=spatial_filter
+                )
                 df = arcgis_table_to_df("TOPGIS_GC.GC_BED_FORM_ATT")
                 logger.debug(df)
                 logger.debug(gdf)
@@ -319,81 +412,38 @@ class SymbolFilter:
                 logger.debug(f"     ====== MERGING")
                 logger.debug(gdf)
 
-                messages.addMessage(f"HARMOS: {gdf.columns}")
-
-                # results = process_layer(layername, gdf, renderer)
-
-            logger.info(f"    count={len(gdf)}")
-            logger.debug(f"    {renderer}")
-            logger.debug(f"    {gdf.columns}")
-
             if not "toto" in layername:  # "Quelle" in layername:
-                logger.info("############################################")
-
-
                 if columns is None or any(col is None for col in columns):
                     logger.error(f"<null> column are not valid: {columns}")
                     continue
+                if gdf is None:
+                    try:
+                        gdf = arcgis_table_to_df(
+                            feature_class_path,
+                            input_fields=["OBJECTID"] + columns,
+                            spatial_filter=spatial_filter,
+                            # query= "KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,13801003,13801004,13801005,13801006,14601004) AND (PRINTED = 1 OR PRINTED IS NULL)"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error while getting dataframe fro layer {layername}: {e}"
+                        )
+                        continue
+                feat_total = str(len(gdf))
 
-                try:
-                    gdf = arcgis_table_to_df(
-                        feature_class_path,
-                        input_fields=["OBJECTID"] + columns,
-                        spatial_filter=spatial_filter,
-                        # query= "KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,13801003,13801004,13801005,13801006,14601004) AND (PRINTED = 1 OR PRINTED IS NULL)"
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"Error while getting dataframe fro layer {layername}: {e}"
-                    )
-                    continue
+                messages.addMessage(
+                    f"{feat_total : >10} objects in selected feature".encode("cp1252")
+                )
 
-                logger.debug(f"BEFORE: Orient dataFrame\n{gdf}")
-                messages.addMessage(f"Features total: {len(gdf)}")
+                complex_filter_criteria = get_complex_filter_criteria(
+                    labels, values, columns
+                )
 
-                # Initialize the complex filter criteria list
-                complex_filter_criteria = []
-
-                # Iterate over the list of value sets and labels
-                for label, value_set in zip(labels, values):
-                    for value_group in value_set:
-                        # Create a list of (column, value) pairs
-                        criteria = [
-                            (col, convert_to_int(val))
-                            for col, val in zip(columns, value_group)
-                        ]  # if val is not None]
-                        # Add the criteria to the complex filter list along with the label
-                        complex_filter_criteria.append((label, criteria))
-
-                # Print the complex filter criteria
-                logger.debug("Complex Filter Criteria with Labels:")
-                for label, criteria in complex_filter_criteria:
-                    logger.debug(f"Label: {label}, Criteria: {criteria}")
-
-                """complex_filter_criteria = [
-                    [("KIND", 14401001), ("HSUR_TYPE", 999998)],
-                    [("KIND", 12501001), ("HSUR_TYPE", 0)],
-                ]"""
                 df = gdf
 
                 columns_to_convert = columns
-                # Check if conversion is possible and convert
-                try:
-                    for col in columns_to_convert:
-                        if (
-                            df[col]
-                            .dropna()
-                            .apply(lambda x: isinstance(x, float) and x.is_integer())
-                            .all()
-                        ):
-                            # Fill NaN values with 0 (or another specific value) before conversion
-                            df[col] = df[col].fillna(0).astype(int)
-                except KeyError as ke:
-                    logger.error(f"Key error while converting column {col}: {ke}")
-                except Exception as e:
-                    logger.error(f"Unknown error: {e}")
-                logger.debug(f"BEFORE: Orient dataFrame\n{df}")
-                logger.debug(f"Count\n{len(gdf)}")
+
+                df = convert_columns(df, columns_to_convert)
 
                 # Dictionary to store counts and rows for each complex filter criterion
                 results = {}
@@ -423,7 +473,10 @@ class SymbolFilter:
                     count = len(filtered_df)
 
                     if count > 0:
-                        messages.addMessage(f"{label}: {count}")
+                        count_str = str(count)
+                        messages.addMessage(
+                            f"{count_str : >10} {label}".encode("cp1252")
+                        )
                         results[label] = count
 
                 # Print the results
@@ -438,43 +491,9 @@ class SymbolFilter:
 
                 filtered[layername] = results
 
-            # messages.addMessage(f"    {gdf.columns}")
-            # rules = process_layer(layername, gdf, renderer)
+        messages.addMessage(f"---- Saving results to {output_path} ----------")
 
-            # filtered[layername] = rules
-            # logger.debug(f"     {json.dumps(results, indent=4)}")
-
-        logger.info(f"---- Saving results to {output_path} ----------")
-        logger.debug(f"---- {filtered.keys()} ----------")
-
-        try:
-            data = filtered  # results["layers"]
-
-            with open(
-                output_path.replace(".xlsx", ".json"), "w", encoding="utf-8"
-            ) as f:
-                # Serialize the data and write it to the file
-                json.dump(filtered, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            messages.addErrorMessage(e)
-            logger.error(e)
-
-        try:
-            flattened_data = [
-                (k1, k2, v) for k1, subdict in data.items() for k2, v in subdict.items()
-            ]
-
-            # Convert to a DataFrame
-            df = pd.DataFrame(flattened_data, columns=["Layer", "Rule", "Count"])
-            if drop:
-                df = df[df.Count != 0]
-
-            with pd.ExcelWriter(output_path ) as writer:
-                df.to_excel(writer, sheet_name="RULES")
-
-        except Exception as e:
-            messages.addErrorMessage(e)
-            logger.error(e)
+        save_to_files(output_path, filtered, drop_null=True)
 
         return
 
