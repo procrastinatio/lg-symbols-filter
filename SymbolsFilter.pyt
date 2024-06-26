@@ -8,6 +8,7 @@ import json
 import arcpy
 import logging
 from pathlib import Path
+import shutil
 
 import helpers
 import arcpy_logger
@@ -29,7 +30,9 @@ toolbox_path = os.path.abspath(__file__)
 toolbox_dir = os.path.dirname(toolbox_path)
 
 DEFAULT_SYMBOL_RULES_JSON = os.path.join(toolbox_dir, "layer_symbols_rules.json")
-DEFAULT_FILTERED_SYMBOL_FILE = os.path.join(toolbox_dir, "output", "filtered_feature_count.xlsx")
+DEFAULT_FILTERED_SYMBOL_FILE = os.path.join(
+    toolbox_dir, "output", "filtered_feature_count.xlsx"
+)
 
 """logger = arcpy_logger.get_logger(
     log_level="INFO", logfile_pth=Path(r"H:/SymbolFilter.log"), propagate=False
@@ -267,6 +270,26 @@ def save_to_files(output_path, filtered, drop_null=True):
         raise arcpy.ExecuteError
 
 
+def setup_connection(destination_dir):
+    source_file = (
+        r"\\v0t0020a.adr.admin.ch\topgisprod\01_Admin\Connections\GCOVERP@osa.sde"
+    )
+    destination_file = os.path.join(destination_dir, os.path.basename(source_file))
+
+    if os.path.isfile(destination_file):
+        return destination_file
+
+    if not os.path.exists(destination_dir):
+        os.makedirs(destination_dir)
+
+    try:
+        shutil.copy2(source_file, destination_file)
+    except OSError as e:
+        raise arcpy.ExecuteError
+
+    return destination_file
+
+
 class Toolbox:
     def __init__(self):
         """Define the toolbox (the name of the toolbox is the name of the
@@ -282,13 +305,13 @@ class SymbolFilter:
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
         self.label = "SymbolFilter"
-        self.description = ""
+        self.description = "Filtering out symbol classes without any object"
 
     def getParameterInfo(self):
         """Define the tool parameters."""
         # First parameter
         param0 = arcpy.Parameter(
-            displayName="Input Features",
+            displayName="Input Perimeter",
             name="in_features",
             datatype="GPFeatureLayer",
             parameterType="Required",
@@ -297,7 +320,7 @@ class SymbolFilter:
 
         # Second parameter
         param1 = arcpy.Parameter(
-            displayName="Input File",
+            displayName="Symbol rules JSON file",
             name="in_file",
             datatype="DEFile",
             parameterType="Required",
@@ -305,7 +328,7 @@ class SymbolFilter:
         )
 
         param2 = arcpy.Parameter(
-            displayName="Output File",
+            displayName="Output File (.xlsx)",
             name="out_file",
             datatype="DEFile",
             parameterType="Required",
@@ -336,12 +359,8 @@ class SymbolFilter:
 
     def execute(self, parameters, messages):
         """The source code of the tool."""
-        # from filter_symbols import process_layers_symbols
 
-        # from export_symbol_rules import arcgis_table_to_df  # Twice imported
         from utils import arcgis_table_to_df  # Twice imported
-
-        # from helpers import process_layer
 
         inLayer = parameters[0].valueAsText
         inSymbolsFile = parameters[1].valueAsText
@@ -351,7 +370,7 @@ class SymbolFilter:
         dataset = None
         drop = True
 
-        arcpy.env.workspace = DEFAULT_WORKSPACE
+        arcpy.env.workspace = setup_connection(toolbox_dir)
 
         try:
             # Read the mask file (shapefile or GeoJSON)
