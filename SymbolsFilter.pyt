@@ -38,8 +38,6 @@ DEFAULT_FILTERED_SYMBOL_FILE = os.path.join(
     log_level="INFO", logfile_pth=Path(r"H:/SymbolFilter.log"), propagate=False
 )"""
 
-log_str_lst = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL", "WARN", "FATAL"]
-log_int_lst = [0, 10, 20, 30, 40, 50]
 
 log_level = "WARNING"
 
@@ -77,96 +75,11 @@ def clean_headings(headings):
     return headings
 
 
-"""def filter_from_criteria(data, gdf):
-    headings = data.get("headings")
-
-    values = data.get("values")
-    labels = data.get("labels")
-
-    headings = clean_headings(headings)
-
-    filter_criteria = zip(labels, values)
-
-    filters = []
-
-    for criterion in filter_criteria:
-        label, values = criterion
-        # Create the filter expression dynamically
-
-        for value in values:
-            filter_expression = pd.Series([True] * len(gdf))
-            for i, head in enumerate(headings):
-                filter_expression = filter_expression & (
-                    gdf[head] == convert_to_int(value[i])
-                )
-        filters.append(filter_expression)
-
-    return filters"""
-
-
 def get_last_element(s):
     if s is None:
         return s
     elements = s.split(".")
     return elements[-1]
-
-
-"""def process_layer(layername, gdf, data, all_value=True):
-    results = {}
-    logger.info(f"-----{layername}--------")
-
-    headings = data.get("headings")
-    logger.debug(headings)
-
-    values = data.get("values")
-    labels = data.get("labels")
-
-    if headings is None or None in headings:
-        logger.warning(f"No headings found for {layername}: {headings}")
-        return results
-    else:
-        headings = list(map(get_last_element, headings))
-    logger.debug(headings)
-    if headings:
-        logger.debug(headings)
-        logger.debug(f"Before cleanup: {gdf.columns}")
-        gdf = gdf[headings]
-        logger.debug(f"After cleanup: {gdf.columns}")
-
-    # Check if conversion is possible and convert:
-
-    for col in headings:
-        if (
-            gdf[col]
-            .dropna()
-            .apply(lambda x: isinstance(x, float) and x.is_integer())
-            .all()
-        ):
-            gdf[col] = gdf[col].fillna(0).astype(int)
-
-    gdf = gdf.fillna(0.0).astype(int)
-
-
-
-
-    filters = filter_from_criteria(data, gdf)
-
-    filter_criteria = zip(labels, values, filters)
-
-    for filter_criterion in filter_criteria:
-        logging.info(f"\nApplying criteria: {filter_criterion}")
-        label, values, filter_expression = filter_criterion
-
-        # Apply the filter
-        filtered_df = gdf[filter_expression]
-
-        # Store the count and the matching rows
-        results[label] = len(filtered_df)
-
-        if len(filtered_df) > 0:
-            logger.info(f"    {label}: {len(filtered_df)}")
-
-    return {"rules": results}"""
 
 
 def get_dataset(data):
@@ -431,6 +344,7 @@ class SymbolFilter:
                 logger.debug(f"     ====== MERGING")
                 logger.debug(gdf)
 
+            # TODO
             if not "toto" in layername:  # "Quelle" in layername:
                 if columns is None or any(col is None for col in columns):
                     logger.error(f"<null> column are not valid: {columns}")
@@ -512,6 +426,7 @@ class SymbolFilter:
 
         messages.addMessage(f"---- Saving results to {output_path} ----------")
 
+        # TODO: encoding issue
         save_to_files(output_path, filtered, drop_null=True)
 
         return
