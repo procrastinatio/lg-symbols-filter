@@ -156,8 +156,12 @@ def get_complex_filter_criteria(labels, values, columns):
 
 def convert_columns(df, columns_to_convert):
     # Check if conversion is possible and convert
-    try:
-        for col in columns_to_convert:
+
+    for col in columns_to_convert:
+        if col is None or col == "":
+            logger.warning(f"Not converting column: {col}")
+            continue
+        try:
             if (
                 df[col]
                 .dropna()
@@ -166,10 +170,10 @@ def convert_columns(df, columns_to_convert):
             ):
                 # Fill NaN values with 0 (or another specific value) before conversion
                 df[col] = df[col].fillna(0).astype(int)
-    except KeyError as ke:
-        logger.error(f"Key error while converting column {col}: {ke}")
-    except Exception as e:
-        logger.error(f"Unknown error: {e}")
+        except KeyError as ke:
+            logger.error(f"Key error while converting column {col}: {ke}")
+        except Exception as e:
+            logger.error(f"Unknown error: {e}")
 
     return df
 
@@ -381,8 +385,9 @@ class SymbolFilter:
                 df = arcgis_table_to_df("TOPGIS_GC.GC_BED_FORM_ATT")
                 gdf = gdf.merge(df, left_on="FORM_ATT", right_on="UUID")
 
-            # TODO
-            if not "toto" in layername:  # "Quelle" in layername:
+            # TODO Attribut SEEBODEN???
+            if not "Deposits_Chrono" in layername:  # "Quelle" in layername:
+                features_rules_sum = 0
                 if columns is None or any(col is None for col in columns):
                     messages.addErrorMessage(
                         f"<null> column are not valid: {columns}. Skipping"
@@ -403,10 +408,6 @@ class SymbolFilter:
                         )
                         continue
                 feat_total = str(len(gdf))
-
-                messages.addMessage(
-                    f"{feat_total : >10} objects in selected extent".encode("cp1252")
-                )
 
                 complex_filter_criteria = get_complex_filter_criteria(
                     labels, values, columns
@@ -438,6 +439,7 @@ class SymbolFilter:
                     filtered_df = df[filter_expression]
 
                     count = len(filtered_df)
+                    features_rules_sum += count
 
                     if count > 0:
                         count_str = str(count)
@@ -456,6 +458,14 @@ class SymbolFilter:
                     logger.info(result["rows"])"""
 
                 filtered[layername] = results
+                messages.addMessage(
+                    f"          ----------\n{feat_total : >10} in selected extent (with query_defn)".encode(
+                        "cp1252"
+                    )
+                )
+                messages.addMessage(
+                    f"{features_rules_sum : >10} in classes".encode("cp1252")
+                )
 
         messages.addMessage(f"---- Saving results to {output_path} ----------")
 
