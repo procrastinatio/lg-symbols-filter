@@ -15,6 +15,15 @@ import arcpy_logger
 
 import importlib
 
+try:
+    import openpyxl
+
+    engine = "openpyxl"
+    print("openpyxl is available, using it as the engine")
+except ImportError:
+    engine = None
+    print("openpyxl is not available, using the default engine")
+
 importlib.reload(helpers)  # force reload of the module
 importlib.reload(arcpy_logger)
 
@@ -102,6 +111,17 @@ def get_renderer(data):
     return renderer
 
 
+def get_query_defn(data):
+    sql_query = None
+    # TODO: is there more than one sql statement?
+    try:
+        sql_query = next(item["sql"] for item in data["query_defn"] if "sql" in item)
+    except Exception as e:
+        logger.warning(f"    Cannot get SQL query: {e}")
+
+    return sql_query
+
+
 def get_columns(renderer, layername):
     columns = renderer.get("headings")
 
@@ -154,7 +174,7 @@ def convert_columns(df, columns_to_convert):
     return df
 
 
-def save_to_files(output_path, filtered, drop_null=True):
+def save_to_files(output_path, filtered, drop_null=True, engine=None):
     try:
         data = filtered  # results["layers"]
 
@@ -175,8 +195,20 @@ def save_to_files(output_path, filtered, drop_null=True):
         if drop_null:
             df = df[df.Count != 0]
 
+        # TODO: why?
+        df["Rule"] = df["Rule"].str.encode("windows-1252").str.decode("utf-8")
+
         with pd.ExcelWriter(output_path) as writer:
-            df.to_excel(writer, sheet_name="RULES")
+            if engine:
+                df.to_excel(
+                    writer,
+                    sheet_name="RULES",
+                    engine=engine,
+                    index=False,
+                    encoding="utf-8",
+                )
+            else:
+                df.to_excel(writer, sheet_name="RULES", index=False)
 
     except Exception as e:
         logger.error(e)
@@ -288,11 +320,14 @@ class SymbolFilter:
         try:
             # Read the mask file (shapefile or GeoJSON)
             spatial_filter = helpers.get_selected_features(inLayer)
-            # Assuming the mask is a single geometry, you can dissolve to create a single unified geometry
-            # mask_geom = mask_gdf.unary_union
+
+            messages.AddMessage(
+                f"Found feature: area={spatial_filter.area/1e6} km2, bbox={spatial_filter.extent}"
+            )
 
         except Exception as e:
             logger.error(e)
+            messages.addErrorMessage(type(spatial_filter))
             messages.addErrorMessage(
                 "Layer {0} has no selected features.".format(inLayer)
             )
@@ -323,6 +358,9 @@ class SymbolFilter:
             values = renderer.get("values")
             labels = renderer.get("labels")
 
+            sql = get_query_defn(data)
+            messages.addMessage(f"sql={sql}")
+
             if columns is None:
                 logger.warning(f"No headings found for {layername}: {columns}")
                 continue
@@ -335,7 +373,7 @@ class SymbolFilter:
             # TODO: this should be dynamic
             if "Bedrock_HARMOS" in layername:
                 gdf = arcgis_table_to_df(
-                    feature_class_path, spatial_filter=spatial_filter
+                    feature_class_path, spatial_filter=spatial_filter, query=sql
                 )
                 df = arcgis_table_to_df("TOPGIS_GC.GC_BED_FORM_ATT")
                 logger.debug(df)
@@ -355,7 +393,7 @@ class SymbolFilter:
                             feature_class_path,
                             input_fields=["OBJECTID"] + columns,
                             spatial_filter=spatial_filter,
-                            # query= "KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,13801003,13801004,13801005,13801006,14601004) AND (PRINTED = 1 OR PRINTED IS NULL)"
+                            query=sql,
                         )
                     except Exception as e:
                         logger.error(
@@ -427,7 +465,7 @@ class SymbolFilter:
         messages.addMessage(f"---- Saving results to {output_path} ----------")
 
         # TODO: encoding issue
-        save_to_files(output_path, filtered, drop_null=True)
+        save_to_files(output_path, filtered, drop_null=True, engine=None)
 
         return
 
