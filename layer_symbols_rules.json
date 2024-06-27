@@ -16674,7 +16674,7 @@
             "headings": [
                 "TTEC_STATUS",
                 "TTEC_META_STA",
-                null
+                "TTEC_LIM_TYP"
             ],
             "labels": [
                 "gesichert, Decken trennend",
@@ -17152,68 +17152,6 @@
         ],
         "dataSource": "Instance=GCOVERP,Database Platform=Oracle,Version=SDE.DEFAULT (Traditional),Authentication Type=Operating System Authentication,Feature Dataset=TOPGIS_GC.GC_ROCK_BODIES,Dataset=TOPGIS_GC.GC_LINEAR_OBJECTS"
     },
-    "Unco Deposits_Chrono": {
-        "renderer": {
-            "headings_alias": [
-                ""
-            ],
-            "headings": [
-                null
-            ],
-            "labels": [
-                "Pliozän",
-                "Holozän",
-                "Frühes Pleistozän",
-                "Mittleres Pleistozän",
-                "Spätes Pleistozän",
-                "Pleistozän"
-            ],
-            "values": [
-                [
-                    [
-                        "15001014"
-                    ]
-                ],
-                [
-                    [
-                        "15001004"
-                    ]
-                ],
-                [
-                    [
-                        "15001009"
-                    ]
-                ],
-                [
-                    [
-                        "15001007"
-                    ]
-                ],
-                [
-                    [
-                        "15001006"
-                    ]
-                ],
-                [
-                    [
-                        "15001005"
-                    ]
-                ]
-            ]
-        },
-        "query_defn": [
-            {
-                "name": ""
-            },
-            {
-                "sql": "RUNC_LITHO IN (15101019, 15101021, 15101024, 15101027, 15101028, 15101029, 15101030, 15101031, 15101032, 15101033, 15101034, 15101046, 15101047, 15101048, 15101049, 15101055, 15101058)"
-            },
-            {
-                "isActive": true
-            }
-        ],
-        "dataSource": "Instance=GCOVERP,Database Platform=Oracle,Version=SDE.DEFAULT (Traditional),Authentication Type=Operating System Authentication,Feature Dataset=TOPGIS_GC.GC_ROCK_BODIES,Dataset=TOPGIS_GC.GC_UNCO_DESPOSIT"
-    },
     "Unco Deposits_Litho_>20000": {
         "renderer": {
             "type": "SimpleRenderer"
@@ -17237,7 +17175,7 @@
                 "Seebodesediment"
             ],
             "headings": [
-                null
+                "SEEBODESEDIMENT"
             ],
             "labels": [
                 "Seebodensediment, Holozän",
