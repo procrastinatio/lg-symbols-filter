@@ -421,7 +421,7 @@ class SymbolFilter:
                 df = convert_columns(df, columns_to_convert)
 
                 # Store counts and rows for each complex filter criterion
-                results = 0
+                results = {}
 
                 for label, criteria in complex_filter_criteria:
                     logger.debug(f"\nApplying criteria: {label}, {criteria}")
@@ -449,14 +449,6 @@ class SymbolFilter:
                         )
                         results[label] = count
 
-                # Print the results
-
-                """for label, result in results.items():
-                    logger.info(f"\nFilter Label: {label}")
-                    logger.info(f"Criteria: {result['criteria']}")
-                    logger.info(f"Count: {result['count']}")
-                    logger.info("Matching Rows:")
-                    logger.info(result["rows"])"""
 
                 filtered[layername] = results
                 messages.addMessage(
