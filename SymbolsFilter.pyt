@@ -111,6 +111,17 @@ def get_renderer(data):
     return renderer
 
 
+def get_query_defn(data):
+    sql_query = None
+    # TODO: is there more than one sql statement?
+    try:
+        sql_query = next(item["sql"] for item in data["query_defn"] if "sql" in item)
+    except Exception as e:
+        logger.warning(f"    Cannot get SQL query: {e}")
+
+    return sql_query
+
+
 def get_columns(renderer, layername):
     columns = renderer.get("headings")
 
@@ -347,6 +358,9 @@ class SymbolFilter:
             values = renderer.get("values")
             labels = renderer.get("labels")
 
+            sql = get_query_defn(data)
+            messages.addMessage(f"sql={sql}")
+
             if columns is None:
                 logger.warning(f"No headings found for {layername}: {columns}")
                 continue
@@ -359,7 +373,7 @@ class SymbolFilter:
             # TODO: this should be dynamic
             if "Bedrock_HARMOS" in layername:
                 gdf = arcgis_table_to_df(
-                    feature_class_path, spatial_filter=spatial_filter
+                    feature_class_path, spatial_filter=spatial_filter, query=sql
                 )
                 df = arcgis_table_to_df("TOPGIS_GC.GC_BED_FORM_ATT")
                 logger.debug(df)
@@ -379,7 +393,7 @@ class SymbolFilter:
                             feature_class_path,
                             input_fields=["OBJECTID"] + columns,
                             spatial_filter=spatial_filter,
-                            # query= "KIND IN (11901001,12501002,12501003,12501004,12501006,12101006,13601001,13601002 ,13601003,13701001,13701002,13701004,13801003,13801004,13801005,13801006,14601004) AND (PRINTED = 1 OR PRINTED IS NULL)"
+                            query=sql,
                         )
                     except Exception as e:
                         logger.error(
