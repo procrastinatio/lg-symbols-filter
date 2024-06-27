@@ -15,6 +15,15 @@ import arcpy_logger
 
 import importlib
 
+try:
+    import openpyxl
+
+    engine = "openpyxl"
+    print("openpyxl is available, using it as the engine")
+except ImportError:
+    engine = None
+    print("openpyxl is not available, using the default engine")
+
 importlib.reload(helpers)  # force reload of the module
 importlib.reload(arcpy_logger)
 
@@ -154,7 +163,7 @@ def convert_columns(df, columns_to_convert):
     return df
 
 
-def save_to_files(output_path, filtered, drop_null=True):
+def save_to_files(output_path, filtered, drop_null=True, engine=None):
     try:
         data = filtered  # results["layers"]
 
@@ -175,8 +184,20 @@ def save_to_files(output_path, filtered, drop_null=True):
         if drop_null:
             df = df[df.Count != 0]
 
+        # TODO: why?
+        df["Rule"] = df["Rule"].str.encode("windows-1252").str.decode("utf-8")
+
         with pd.ExcelWriter(output_path) as writer:
-            df.to_excel(writer, sheet_name="RULES")
+            if engine:
+                df.to_excel(
+                    writer,
+                    sheet_name="RULES",
+                    engine=engine,
+                    index=False,
+                    encoding="utf-8",
+                )
+            else:
+                df.to_excel(writer, sheet_name="RULES", index=False)
 
     except Exception as e:
         logger.error(e)
@@ -288,11 +309,14 @@ class SymbolFilter:
         try:
             # Read the mask file (shapefile or GeoJSON)
             spatial_filter = helpers.get_selected_features(inLayer)
-            # Assuming the mask is a single geometry, you can dissolve to create a single unified geometry
-            # mask_geom = mask_gdf.unary_union
+
+            messages.AddMessage(
+                f"Found feature: area={spatial_filter.area/1e6} km2, bbox={spatial_filter.extent}"
+            )
 
         except Exception as e:
             logger.error(e)
+            messages.addErrorMessage(type(spatial_filter))
             messages.addErrorMessage(
                 "Layer {0} has no selected features.".format(inLayer)
             )
@@ -427,7 +451,7 @@ class SymbolFilter:
         messages.addMessage(f"---- Saving results to {output_path} ----------")
 
         # TODO: encoding issue
-        save_to_files(output_path, filtered, drop_null=True)
+        save_to_files(output_path, filtered, drop_null=True, engine=None)
 
         return
 
