@@ -178,7 +178,9 @@ def save_to_files(output_path, filtered, drop_null=True, engine=None):
     try:
         data = filtered  # results["layers"]
 
-        with open(output_path.replace(".xlsx", ".json"), "w", encoding="windows-1252") as f:
+        with open(
+            output_path.replace(".xlsx", ".json"), "w", encoding="windows-1252"
+        ) as f:
             # Serialize the data and write it to the file
             json.dump(filtered, f, ensure_ascii=False, indent=4)
     except Exception as e:
@@ -327,7 +329,6 @@ class SymbolFilter:
 
         except Exception as e:
             logger.error(e)
-            messages.addErrorMessage(type(spatial_filter))
             messages.addErrorMessage(
                 "Layer {0} has no selected features.".format(inLayer)
             )
@@ -359,10 +360,12 @@ class SymbolFilter:
             labels = renderer.get("labels")
 
             sql = get_query_defn(data)
-            messages.addMessage(f"sql={sql}")
+            messages.addMessage(f"    sql={sql}")
 
             if columns is None:
-                logger.warning(f"No headings found for {layername}: {columns}")
+                logger.warning(
+                    f"    No headings found for {layername}: {columns}. Skipping"
+                )
                 continue
 
             # Get the selected features using a search cursor with spatial filter
@@ -376,15 +379,14 @@ class SymbolFilter:
                     feature_class_path, spatial_filter=spatial_filter, query=sql
                 )
                 df = arcgis_table_to_df("TOPGIS_GC.GC_BED_FORM_ATT")
-                logger.debug(df)
-                logger.debug(gdf)
                 gdf = gdf.merge(df, left_on="FORM_ATT", right_on="UUID")
-                logger.debug(f"     ====== MERGING")
-                logger.debug(gdf)
 
             # TODO
             if not "toto" in layername:  # "Quelle" in layername:
                 if columns is None or any(col is None for col in columns):
+                    messages.addErrorMessage(
+                        f"<null> column are not valid: {columns}. Skipping"
+                    )
                     logger.error(f"<null> column are not valid: {columns}")
                     continue
                 if gdf is None:
@@ -397,13 +399,13 @@ class SymbolFilter:
                         )
                     except Exception as e:
                         logger.error(
-                            f"Error while getting dataframe fro layer {layername}: {e}"
+                            f"Error while getting dataframe from layer {layername}: {e}"
                         )
                         continue
                 feat_total = str(len(gdf))
 
                 messages.addMessage(
-                    f"{feat_total : >10} objects in selected feature".encode("cp1252")
+                    f"{feat_total : >10} objects in selected extent".encode("cp1252")
                 )
 
                 complex_filter_criteria = get_complex_filter_criteria(
@@ -420,7 +422,7 @@ class SymbolFilter:
                 results = {}
 
                 for label, criteria in complex_filter_criteria:
-                    logger.info(f"\nApplying criteria: {label}, {criteria}")
+                    logger.debug(f"\nApplying criteria: {label}, {criteria}")
 
                     # Start with a True series to filter
                     filter_expression = pd.Series([True] * len(df), index=df.index)
@@ -434,12 +436,6 @@ class SymbolFilter:
 
                     # Apply the final filter to the DataFrame
                     filtered_df = df[filter_expression]
-
-                    """results[label] = {
-                        "count": len(filtered_df),
-                        "rows": filtered_df.to_json(orient='records') , # filtered_df,
-                        "criteria": criteria,
-                    }"""
 
                     count = len(filtered_df)
 
@@ -458,7 +454,6 @@ class SymbolFilter:
                     logger.info(f"Count: {result['count']}")
                     logger.info("Matching Rows:")
                     logger.info(result["rows"])"""
-                logger.info("---")
 
                 filtered[layername] = results
 
@@ -466,6 +461,7 @@ class SymbolFilter:
 
         # TODO: encoding issue
         save_to_files(output_path, filtered, drop_null=True, engine=None)
+        messages.addMessage("Done.")
 
         return
 

@@ -16674,7 +16674,7 @@
             "headings": [
                 "TTEC_STATUS",
                 "TTEC_META_STA",
-                null
+                "TTEC_LIM_TYP"
             ],
             "labels": [
                 "gesichert, Decken trennend",
@@ -17158,7 +17158,7 @@
                 ""
             ],
             "headings": [
-                null
+                ""
             ],
             "labels": [
                 "Pliozän",
@@ -17237,7 +17237,7 @@
                 "Seebodesediment"
             ],
             "headings": [
-                null
+                "SEEBODESEDIMENT"
             ],
             "labels": [
                 "Seebodensediment, Holozän",
