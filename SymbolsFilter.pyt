@@ -201,8 +201,9 @@ def save_to_files(output_path, filtered, drop_null=True, engine=None):
         if drop_null:
             df = df[df.Count != 0]
 
-        # TODO: why?
+        # TODO: why do we have to convert from cp252?
         df["Rule"] = df["Rule"].str.encode("windows-1252").str.decode("utf-8")
+        df["Layer"] = df["Layer"].str.encode("windows-1252").str.decode("utf-8")
 
         with pd.ExcelWriter(output_path) as writer:
             if engine:
@@ -419,7 +420,7 @@ class SymbolFilter:
 
                 df = convert_columns(df, columns_to_convert)
 
-                # Dictionary to store counts and rows for each complex filter criterion
+                # Store counts and rows for each complex filter criterion
                 results = {}
 
                 for label, criteria in complex_filter_criteria:
@@ -448,14 +449,6 @@ class SymbolFilter:
                         )
                         results[label] = count
 
-                # Print the results
-
-                """for label, result in results.items():
-                    logger.info(f"\nFilter Label: {label}")
-                    logger.info(f"Criteria: {result['criteria']}")
-                    logger.info(f"Count: {result['count']}")
-                    logger.info("Matching Rows:")
-                    logger.info(result["rows"])"""
 
                 filtered[layername] = results
                 messages.addMessage(
