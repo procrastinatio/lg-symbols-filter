@@ -178,7 +178,7 @@ def save_to_files(output_path, filtered, drop_null=True, engine=None):
     try:
         data = filtered  # results["layers"]
 
-        with open(output_path.replace(".xlsx", ".json"), "w", encoding="utf-8") as f:
+        with open(output_path.replace(".xlsx", ".json"), "w", encoding="windows-1252") as f:
             # Serialize the data and write it to the file
             json.dump(filtered, f, ensure_ascii=False, indent=4)
     except Exception as e:
