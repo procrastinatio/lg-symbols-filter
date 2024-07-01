@@ -123,10 +123,10 @@ def get_query_defn(data):
 
 
 def get_columns(renderer, layername):
-    columns = renderer.get("headings")
+    columns = renderer.get("fields")
 
     if columns is None or None in columns:
-        logger.warning(f"No headings found for {layername}: {columns}")
+        logger.warning(f"No fields found for {layername}: {columns}")
     else:
         columns = list(map(get_last_element, columns))
     return columns
@@ -360,9 +360,12 @@ class SymbolFilter:
             feature_class_path = dataset
 
             # headers
+            values = []
+            labels = []
             columns = get_columns(renderer, layername)
-            values = renderer.get("values")
-            labels = renderer.get("labels")
+            for grp in renderer.get("groups", []):
+                values += grp.get("values", [])
+                labels += grp.get("labels", [])
 
             sql = get_query_defn(data)
             messages.addMessage(f"    sql={sql}")
@@ -387,7 +390,9 @@ class SymbolFilter:
                 gdf = gdf.merge(df, left_on="FORM_ATT", right_on="UUID")
 
             # TODO Attribut SEEBODEN???
-            if not "Deposits_Chrono" in layername:  # "Quelle" in layername:
+            if (
+                not "toto" in layername
+            ):  # Deposits_Chrono" in layername:  # "Quelle" in layername:
                 features_rules_sum = 0
                 if columns is None or any(col is None for col in columns):
                     messages.addErrorMessage(
@@ -449,10 +454,9 @@ class SymbolFilter:
                         )
                         results[label] = count
 
-
                 filtered[layername] = results
                 messages.addMessage(
-                    f"          ----------\n{feat_total : >10} in selected extent (with query_defn)".encode(
+                    f"          ----total------\n{feat_total : >10} in selected extent (with query_defn)".encode(
                         "cp1252"
                     )
                 )
