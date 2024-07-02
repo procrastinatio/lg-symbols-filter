@@ -248,6 +248,15 @@ def setup_connection(destination_dir):
     return destination_file
 
 
+def item_group_to_dict(item_group):
+    """Convert an ItemGroup object to a dictionary."""
+    item_group_dict = {
+        "heading": item_group.heading,
+        "items": [(item.label, item.values) for item in item_group.items],
+    }
+    return item_group_dict
+
+
 class Toolbox:
     def __init__(self):
         """Define the toolbox (the name of the toolbox is the name of the
@@ -353,8 +362,12 @@ class SymbolFilter:
                 continue
             layername = layer.name
             try:
-                messages.addMessage(f"Getting symbols rules for '{layername}''")
+                messages.addMessage(f"Getting symbols rules for '{layername}'")
                 attributes = exporter.rules_exporter(layer)
+                sym = layer.symbology
+                if sym.renderer.type == "UniqueValueRenderer":
+                    grp = sym.renderer.listMissingValues()
+                    attributes["missing"] = [item_group_to_dict(item) for item in grp]
                 rules_dict[layername] = attributes
             except Exception as e:
                 logger.error(f"Cannot get symbols rules for {layername}: {e}")
