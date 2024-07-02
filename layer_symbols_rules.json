@@ -1,14 +1,4 @@
 {
-    "Mapsheet": {
-        "renderer": {
-            "fields": [
-                "UUID"
-            ],
-            "groups": []
-        },
-        "query_defn": [],
-        "dataSource": "Server=GCOVERP,Instance=GCOVERP,Database Platform=Oracle,Version=SDE.DEFAULT (Traditional),Authentication Type=Operating System Authentication,Feature Dataset=TOPGIS_GC.GC_ROCK_BODIES,Dataset=TOPGIS_GC.GC_MAPSHEET"
-    },
     "Point_Mpla_Polarity": {
         "renderer": {
             "fields": [
