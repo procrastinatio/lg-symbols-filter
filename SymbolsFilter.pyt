@@ -12,6 +12,7 @@ import shutil
 
 import helpers
 import arcpy_logger
+import exporter
 
 import importlib
 
@@ -26,6 +27,7 @@ except ImportError:
 
 importlib.reload(helpers)  # force reload of the module
 importlib.reload(arcpy_logger)
+importlib.reload(exporter)
 
 sys.dont_write_bytecode = True
 
@@ -48,7 +50,7 @@ DEFAULT_FILTERED_SYMBOL_FILE = os.path.join(
 )"""
 
 
-log_level = "WARNING"
+log_level = "WARN"
 
 # set logging level
 if isinstance(log_level, str):
@@ -64,6 +66,10 @@ log_frmt = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message
 ah = arcpy_logger.ArcpyHandler()
 ah.setFormatter(log_frmt)
 logger.addHandler(ah)
+
+fileHandler = logging.FileHandler("{0}/{1}.log".format(toolbox_dir, "SymbolsFilter"))
+fileHandler.setFormatter(log_frmt)
+logger.addHandler(fileHandler)
 
 
 def convert_to_int(x):
@@ -123,10 +129,10 @@ def get_query_defn(data):
 
 
 def get_columns(renderer, layername):
-    columns = renderer.get("headings")
+    columns = renderer.get("fields")
 
     if columns is None or None in columns:
-        logger.warning(f"No headings found for {layername}: {columns}")
+        logger.warning(f"No fields found for {layername}: {columns}")
     else:
         columns = list(map(get_last_element, columns))
     return columns
@@ -180,7 +186,7 @@ def convert_columns(df, columns_to_convert):
 
 def save_to_files(output_path, filtered, drop_null=True, engine=None):
     try:
-        data = filtered  # results["layers"]
+        data = filtered
 
         with open(
             output_path.replace(".xlsx", ".json"), "w", encoding="windows-1252"
@@ -270,16 +276,7 @@ class SymbolFilter:
             direction="Input",
         )
 
-        # Second parameter
         param1 = arcpy.Parameter(
-            displayName="Symbol rules JSON file",
-            name="in_file",
-            datatype="DEFile",
-            parameterType="Required",
-            direction="Input",
-        )
-
-        param2 = arcpy.Parameter(
             displayName="Output File (.xlsx)",
             name="out_file",
             datatype="DEFile",
@@ -288,10 +285,9 @@ class SymbolFilter:
         )
 
         param0.values = "Mapsheet"
-        param1.values = DEFAULT_SYMBOL_RULES_JSON
-        param2.values = DEFAULT_FILTERED_SYMBOL_FILE
+        param1.values = DEFAULT_FILTERED_SYMBOL_FILE
 
-        params = [param0, param1, param2]
+        params = [param0, param1]
         return params
 
     def isLicensed(self):
@@ -312,17 +308,20 @@ class SymbolFilter:
     def execute(self, parameters, messages):
         """The source code of the tool."""
 
-        from helpers import arcgis_table_to_df  # Twice imported
+        from helpers import arcgis_table_to_df
 
         inLayer = parameters[0].valueAsText
-        inSymbolsFile = parameters[1].valueAsText
-        output_path = parameters[2].valueAsText
+        output_path = parameters[1].valueAsText
         spatial_filter = None
         filtered = {}
         dataset = None
         drop = True
 
         arcpy.env.workspace = setup_connection(toolbox_dir)
+
+        output_dir = os.path.dirname(output_path)
+        if not os.path.isdir(output_dir):
+            os.makedirs(output_dir)
 
         try:
             # Read the mask file (shapefile or GeoJSON)
@@ -339,16 +338,46 @@ class SymbolFilter:
             )
             raise arcpy.ExecuteError
 
+        # Get the current project and active map
+        aprx = arcpy.mp.ArcGISProject("CURRENT")
+        active_map = aprx.activeMap
+        # List all layers in the active map
+        layers = active_map.listLayers()
+
+        rules_dict = {}
+
+        messages.addMessage(f"##### EXTRACTING RULES #####")
+
+        for layer in layers:
+            if layer.name == inLayer or not layer.isFeatureLayer:
+                continue
+            layername = layer.name
+            try:
+                messages.addMessage(f"Getting symbols rules for '{layername}''")
+                attributes = exporter.rules_exporter(layer)
+                rules_dict[layername] = attributes
+            except Exception as e:
+                logger.error(f"Cannot get symbols rules for {layername}: {e}")
+                raise arcpy.ExecuteError
+        messages.addMessage(f"Writting rules to {DEFAULT_SYMBOL_RULES_JSON}")
+        with open(DEFAULT_SYMBOL_RULES_JSON, "w", encoding="utf-8") as f:
+            json.dump(rules_dict, f, ensure_ascii=False, indent=4)
+            del rules_dict
+
         try:
-            with open(inSymbolsFile, "r") as f:
-                layers = json.load(f)
+            with open(DEFAULT_SYMBOL_RULES_JSON, "r") as f:
+                rules_dict = json.load(f)
         except IOError as e:
-            messages.addErrorMessage(f"Cannot open {inSymbolsFile}")
+            messages.addErrorMessage(f"Cannot open {DEFAULT_SYMBOL_RULES_JSON}")
             raise arcpy.ExecuteError
 
-        for layername in layers.keys():
+        messages.addMessage(f"##### FILTERING SYMBOLS WITH RULES #####")
+
+        for layername in rules_dict.keys():
             messages.addMessage(f"--- {layername} ---".encode("cp1252"))
-            data = layers.get(layername)
+            logger.info(f"--- {layername} ---")
+
+            data = rules_dict.get(layername)
 
             dataset = get_dataset(data)
             renderer = get_renderer(data)
@@ -360,9 +389,12 @@ class SymbolFilter:
             feature_class_path = dataset
 
             # headers
+            values = []
+            labels = []
             columns = get_columns(renderer, layername)
-            values = renderer.get("values")
-            labels = renderer.get("labels")
+            for grp in renderer.get("groups", []):
+                values += grp.get("values", [])
+                labels += grp.get("labels", [])
 
             sql = get_query_defn(data)
             messages.addMessage(f"    sql={sql}")
@@ -386,79 +418,74 @@ class SymbolFilter:
                 df = arcgis_table_to_df("TOPGIS_GC.GC_BED_FORM_ATT")
                 gdf = gdf.merge(df, left_on="FORM_ATT", right_on="UUID")
 
-            # TODO Attribut SEEBODEN???
-            if not "Deposits_Chrono" in layername:  # "Quelle" in layername:
-                features_rules_sum = 0
-                if columns is None or any(col is None for col in columns):
-                    messages.addErrorMessage(
-                        f"<null> column are not valid: {columns}. Skipping"
+            features_rules_sum = 0
+            if columns is None or any(col is None for col in columns):
+                messages.addErrorMessage(
+                    f"<null> column are not valid: {columns}. Skipping"
+                )
+                logger.error(f"<null> column are not valid: {columns}")
+                continue
+            if gdf is None:
+                try:
+                    gdf = arcgis_table_to_df(
+                        feature_class_path,
+                        input_fields=["OBJECTID"] + columns,
+                        spatial_filter=spatial_filter,
+                        query=sql,
                     )
-                    logger.error(f"<null> column are not valid: {columns}")
+                except Exception as e:
+                    logger.error(
+                        f"Error while getting dataframe from layer {layername}: {e}"
+                    )
                     continue
-                if gdf is None:
-                    try:
-                        gdf = arcgis_table_to_df(
-                            feature_class_path,
-                            input_fields=["OBJECTID"] + columns,
-                            spatial_filter=spatial_filter,
-                            query=sql,
-                        )
-                    except Exception as e:
-                        logger.error(
-                            f"Error while getting dataframe from layer {layername}: {e}"
-                        )
-                        continue
-                feat_total = str(len(gdf))
+            feat_total = str(len(gdf))
 
-                complex_filter_criteria = get_complex_filter_criteria(
-                    labels, values, columns
+            complex_filter_criteria = get_complex_filter_criteria(
+                labels, values, columns
+            )
+
+            df = gdf
+
+            columns_to_convert = columns
+
+            df = convert_columns(df, columns_to_convert)
+
+            # Store counts and rows for each complex filter criterion
+            results = {}
+
+            for label, criteria in complex_filter_criteria:
+                logger.debug(f"\nApplying criteria: {label}, {criteria}")
+
+                # Start with a True series to filter
+                filter_expression = pd.Series([True] * len(df), index=df.index)
+
+                for column, value in criteria:
+                    # Update the filter expression for each (column, value) pair
+                    filter_expression &= df[column] == value
+                    logger.debug(f"Filter status for ({column} == {value}):")
+                    logger.debug(filter_expression)
+                    logger.debug(f"Matching rows count: {filter_expression.sum()}")
+
+                # Apply the final filter to the DataFrame
+                filtered_df = df[filter_expression]
+
+                count = len(filtered_df)
+                features_rules_sum += count
+
+                if count > 0:
+                    count_str = str(count)
+                    messages.addMessage(f"{count_str : >10} {label}".encode("cp1252"))
+                    results[label] = count
+
+            filtered[layername] = results
+            messages.addMessage(
+                f"          ----total------\n{feat_total : >10} in selected extent (with query_defn)".encode(
+                    "cp1252"
                 )
-
-                df = gdf
-
-                columns_to_convert = columns
-
-                df = convert_columns(df, columns_to_convert)
-
-                # Store counts and rows for each complex filter criterion
-                results = {}
-
-                for label, criteria in complex_filter_criteria:
-                    logger.debug(f"\nApplying criteria: {label}, {criteria}")
-
-                    # Start with a True series to filter
-                    filter_expression = pd.Series([True] * len(df), index=df.index)
-
-                    for column, value in criteria:
-                        # Update the filter expression for each (column, value) pair
-                        filter_expression &= df[column] == value
-                        logger.debug(f"Filter status for ({column} == {value}):")
-                        logger.debug(filter_expression)
-                        logger.debug(f"Matching rows count: {filter_expression.sum()}")
-
-                    # Apply the final filter to the DataFrame
-                    filtered_df = df[filter_expression]
-
-                    count = len(filtered_df)
-                    features_rules_sum += count
-
-                    if count > 0:
-                        count_str = str(count)
-                        messages.addMessage(
-                            f"{count_str : >10} {label}".encode("cp1252")
-                        )
-                        results[label] = count
-
-
-                filtered[layername] = results
-                messages.addMessage(
-                    f"          ----------\n{feat_total : >10} in selected extent (with query_defn)".encode(
-                        "cp1252"
-                    )
-                )
-                messages.addMessage(
-                    f"{features_rules_sum : >10} in classes".encode("cp1252")
-                )
+            )
+            messages.addMessage(
+                f"{features_rules_sum : >10} in classes".encode("cp1252")
+            )
 
         messages.addMessage(f"---- Saving results to {output_path} ----------")
 
